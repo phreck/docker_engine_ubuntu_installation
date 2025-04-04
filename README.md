@@ -39,8 +39,8 @@ It simplifies the process by handling:
 
 1.  **Download or Clone the Script:**
     ```bash
-    git clone [https://github.com/phreck/Docker_Engine_Ubuntu.git](https://github.com/phreck/Docker_Engine_Ubuntu.git)
-    cd your-repo-name
+    git clone https://github.com/phreck/Docker_Engine_Ubuntu.git
+    cd Docker_Engine_Ubuntu
     ```
     Or download the `docker_engine_install.sh` file directly.
 
@@ -70,7 +70,7 @@ It simplifies the process by handling:
 
     * **Install with Both Default Config and Custom Data Root:**
         ```bash
-        sudo ./docker_engine_install.sh -c -d /var/lib/docker-custom
+        sudo ./docker_engine_install.sh -c -d /var/lib/docker-custom-directory
         ```
 
     * **Display Help Message:**
@@ -81,7 +81,7 @@ It simplifies the process by handling:
 ## Command-Line Options
 
 * `-c`: Create or update `/etc/docker/daemon.json`. If the file exists and is valid JSON, merges the default settings below. If the file doesn't exist or is invalid, it will be created/overwritten with these settings (plus any `-d` setting).
-* `-d <path>`: Set a custom absolute path for Docker's data-root directory in `/etc/docker/daemon.json`. Merges the setting if the file exists and is valid JSON. Requires an absolute path (e.g., `/srv/docker`).
+* `-d <path>`: Set a custom absolute path for Docker's data-root directory in `/etc/docker/daemon.json`. Merges the setting if the file exists and is valid JSON. Requires an absolute path (e.g., `/opt/docker`).
 * `-h`: Display the help message and exit.
 
 ## Default `daemon.json` Configuration (`-c` flag)
