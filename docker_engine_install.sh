@@ -251,8 +251,8 @@ if [ -n "$CURRENT_USER" ] && [ "$CURRENT_USER" != "root" ]; then
     if groups "$CURRENT_USER" | grep -q '\bdocker\b'; then
         echo "   - User '$CURRENT_USER' is already in the 'docker' group."
     else
-        sudo usermod -aG docker "$CURRENT_USER"
-        echo "   - Added user '$CURRENT_USER' to the 'docker' group."
+        sudo usermod -aG docker "$USER"
+        echo "   - Added user '$USER' to the 'docker' group."
         NEEDS_RELOGIN=true
     fi
 else
