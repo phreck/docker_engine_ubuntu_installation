@@ -4,7 +4,7 @@
 
 ## Overview
 
-This repository contains a robust bash script (`docker_enginer_install.sh`) designed to automate the installation of the official Docker Engine on Debian-based Linux distributions like Ubuntu, Debian, Linux Mint, etc.
+This repository contains a robust bash script (`docker_engine_install.sh`) designed to automate the installation of the official Docker Engine on Debian-based Linux distributions like Ubuntu, Debian, Linux Mint, etc.
 
 It simplifies the process by handling:
 * Uninstalling older or conflicting Docker packages (`docker.io`, `podman-docker`, etc.).
@@ -17,6 +17,7 @@ It simplifies the process by handling:
 
 * **Idempotent Uninstallation:** Checks for and removes known older/conflicting packages.
 * **Official Repository Setup:** Correctly adds Docker's GPG key and APT repository source.
+* **Modular Repository Setup:** Utilizes a dedicated helper script (`docker_engine_repo.sh`) for clear and focused APT repository management.
 * **Prerequisite Handling:** Installs necessary dependencies like `ca-certificates`, `curl`, `gnupg`, `lsb-release`, and `jq`.
 * **Latest Stable Docker:** Installs `docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin`.
 * **User Group Management:** Automatically adds the user running the script (via `sudo`) to the `docker` group for passwordless Docker command execution (requires logout/login).
@@ -34,6 +35,7 @@ It simplifies the process by handling:
 ## Script Included
 
 * `docker_engine_install.sh`: The main installation and configuration script.
+* `docker_engine_repo.sh`: Helper script called by `docker_engine_install.sh` to set up Docker's APT repository.
 
 ## Usage
 

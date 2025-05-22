@@ -79,7 +79,7 @@ fi
 # Exit immediately if a command exits with a non-zero status.
 set -e
 # Treat unset variables as an error when substituting.
-# set -u
+set -u
 # Ensure pipelines return the exit status of the last command that failed.
 set -o pipefail
 
@@ -128,18 +128,21 @@ echo
 
 # 2. Set up Docker's APT Repository & Install Prerequisites
 echo "🛠️ Setting up Docker's official APT repository and prerequisites..."
+# Delegate repository setup to the dedicated script
+sudo bash ./docker_engine_repo.sh
+
+# Install jq if not already handled by docker_engine_repo.sh (it should be)
+# We run apt-get update before this, which is good practice.
+# docker_engine_repo.sh also runs apt-get update.
 sudo apt-get update
-# Added jq prerequisite
-sudo apt-get install -y ca-certificates curl gnupg lsb-release jq
-KEYRING_DIR="/etc/apt/keyrings"
-KEYRING_PATH="$KEYRING_DIR/docker.gpg"
-sudo install -m 0755 -d "$KEYRING_DIR"
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor --batch --yes -o "$KEYRING_PATH"
-sudo chmod a+r "$KEYRING_PATH"
-REPO_STRING="deb [arch=$(dpkg --print-architecture) signed-by=$KEYRING_PATH] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-echo "$REPO_STRING" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
-echo "✅ Docker APT repository & prerequisites set up (including jq)."
+if ! dpkg -s jq &> /dev/null; then
+    echo "   - Installing jq prerequisite..."
+    sudo apt-get install -y jq
+    echo "✅ jq installed."
+else
+    echo "   - jq already installed."
+fi
+echo "✅ Docker APT repository setup delegated and prerequisites (jq) checked."
 echo
 
 # 3. Install Docker Engine
@@ -183,7 +186,7 @@ if [ "$MANAGE_DAEMON_JSON" = true ]; then
         # Merge default config into desired state (jq 'slurpfile' or direct string merge)
         # Using process substitution for cleaner merge: desired = current * default
          if ! desired_json=$(jq -n --argjson current "$desired_json" --argjson defaults "$DEFAULT_DAEMON_CFG" '$current * $defaults'); then
-             echo "   - Error: Failed to merge default JSON settings." >&2
+             echo "   - Warning: Failed to merge default settings into $DAEMON_CONFIG_FILE. Proceeding without these defaults." >&2
              # Decide how to handle: skip? error? For now, continue without defaults.
              desired_json="$current_json" # Revert to current state before merge attempt
          fi
@@ -193,7 +196,7 @@ if [ "$MANAGE_DAEMON_JSON" = true ]; then
         echo "   - Merging custom data-root setting: '$CUSTOM_DATA_ROOT'..."
         # Merge data-root setting into desired state: desired + {"data-root": path}
         if ! desired_json=$(jq --arg path "$CUSTOM_DATA_ROOT" '. + {"data-root": $path}' <<< "$desired_json"); then
-             echo "   - Error: Failed to merge data-root JSON setting." >&2
+             echo "   - Warning: Failed to merge custom data-root '$CUSTOM_DATA_ROOT' into $DAEMON_CONFIG_FILE. Proceeding without this custom data-root." >&2
              # Decide how to handle: skip? error? For now, continue without data-root.
              # Revert might be complex if defaults were already merged, proceed with caution.
         fi
@@ -201,16 +204,33 @@ if [ "$MANAGE_DAEMON_JSON" = true ]; then
 
     # Compare current (on disk) with desired, write only if changed or file was new
     write_changes=false
-    if ! sudo jq -e . "$DAEMON_CONFIG_FILE" > /dev/null 2>&1 ; then
-        # File doesn't exist or is invalid, needs creation/overwrite
+    # Attempt to read the current on-disk configuration.
+    # Default to "{}" if file doesn't exist, isn't readable, or cat fails.
+    current_on_disk_json=$(sudo cat "$DAEMON_CONFIG_FILE" 2>/dev/null || echo "{}")
+
+    # First, check if the on-disk content is valid JSON.
+    # If DAEMON_CONFIG_FILE doesn't exist, current_on_disk_json is "{}" which is valid.
+    # If DAEMON_CONFIG_FILE exists but is invalid, current_on_disk_json might be its invalid content.
+    if ! echo "$current_on_disk_json" | jq -e . > /dev/null 2>&1; then
+        # Current on-disk content is not valid JSON (or cat failed and produced something non-JSON, though echo "{}" should prevent that).
+        # This also covers the case where the file didn't exist and current_on_disk_json is "{}",
+        # but we want to be sure we write if the file is truly absent or truly invalid.
+        # A simple check for file existence might be better here if current_on_disk_json is always "{}" on cat failure.
+        if [ ! -f "$DAEMON_CONFIG_FILE" ]; then
+            echo "   - $DAEMON_CONFIG_FILE does not exist. Will create."
+        else
+            echo "   - Warning: Existing $DAEMON_CONFIG_FILE is not valid JSON. It will be overwritten."
+        fi
         write_changes=true
-        echo "   - Creating/overwriting $DAEMON_CONFIG_FILE."
     else
-        # File exists and is valid JSON, compare contents
-        if ! echo "$desired_json" | sudo jq -e --argfile current "$DAEMON_CONFIG_FILE" '. == $current' > /dev/null; then
+        # File exists and its content is valid JSON (or it was empty/non-existent and defaulted to "{}")
+        # Now, compare desired_json with current_on_disk_json.
+        # No sudo for jq here as we're operating on variables.
+        if ! echo "$desired_json" | jq -e --argjson current_on_disk "$current_on_disk_json" '. == $current_on_disk' > /dev/null; then
              write_changes=true
              echo "   - Configuration differs, updating $DAEMON_CONFIG_FILE."
         else
+             write_changes=false # Explicitly set to false if they match
              echo "   - Desired configuration already matches $DAEMON_CONFIG_FILE. No changes needed."
         fi
     fi
@@ -251,8 +271,8 @@ if [ -n "$CURRENT_USER" ] && [ "$CURRENT_USER" != "root" ]; then
     if groups "$CURRENT_USER" | grep -q '\bdocker\b'; then
         echo "   - User '$CURRENT_USER' is already in the 'docker' group."
     else
-        sudo usermod -aG docker "$USER"
-        echo "   - Added user '$USER' to the 'docker' group."
+        sudo usermod -aG docker "$CURRENT_USER"
+        echo "   - Added user '$CURRENT_USER' to the 'docker' group."
         NEEDS_RELOGIN=true
     fi
 else
