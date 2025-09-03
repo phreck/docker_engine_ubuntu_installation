@@ -89,6 +89,9 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# Determine the absolute path of the directory where the script is located
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+
 # --- Main Script ---
 
 echo "🚀 Starting Docker Engine installation..."
@@ -128,21 +131,10 @@ echo
 
 # 2. Set up Docker's APT Repository & Install Prerequisites
 echo "🛠️ Setting up Docker's official APT repository and prerequisites..."
-# Delegate repository setup to the dedicated script
-sudo bash ./docker_engine_repo.sh
-
-# Install jq if not already handled by docker_engine_repo.sh (it should be)
-# We run apt-get update before this, which is good practice.
-# docker_engine_repo.sh also runs apt-get update.
-sudo apt-get update
-if ! dpkg -s jq &> /dev/null; then
-    echo "   - Installing jq prerequisite..."
-    sudo apt-get install -y jq
-    echo "✅ jq installed."
-else
-    echo "   - jq already installed."
-fi
-echo "✅ Docker APT repository setup delegated and prerequisites (jq) checked."
+# Delegate repository setup to the dedicated script using an absolute path
+# This ensures the helper script is found regardless of where this script is called from.
+sudo bash "$SCRIPT_DIR/docker_engine_repo.sh"
+echo "✅ Docker APT repository setup delegated and prerequisites checked."
 echo
 
 # 3. Install Docker Engine
@@ -185,20 +177,19 @@ if [ "$MANAGE_DAEMON_JSON" = true ]; then
         echo "   - Merging default settings (log rotation, buildkit)..."
         # Merge default config into desired state (jq 'slurpfile' or direct string merge)
         # Using process substitution for cleaner merge: desired = current * default
-         if ! desired_json=$(jq -n --argjson current "$desired_json" --argjson defaults "$DEFAULT_DAEMON_CFG" '$current * $defaults'); then
-             echo "   - Warning: Failed to merge default settings into $DAEMON_CONFIG_FILE. Proceeding without these defaults." >&2
-             # Decide how to handle: skip? error? For now, continue without defaults.
-             desired_json="$current_json" # Revert to current state before merge attempt
-         fi
+        if ! desired_json=$(jq -n --argjson current "$desired_json" --argjson defaults "$DEFAULT_DAEMON_CFG" '$current * $defaults'); then
+            echo "❌ Error: Failed to merge default settings into the JSON configuration." >&2
+            echo "   This can happen if 'jq' fails or the default config is invalid." >&2
+            exit 1
+        fi
     fi
 
     if [ -n "$CUSTOM_DATA_ROOT" ]; then
         echo "   - Merging custom data-root setting: '$CUSTOM_DATA_ROOT'..."
         # Merge data-root setting into desired state: desired + {"data-root": path}
         if ! desired_json=$(jq --arg path "$CUSTOM_DATA_ROOT" '. + {"data-root": $path}' <<< "$desired_json"); then
-             echo "   - Warning: Failed to merge custom data-root '$CUSTOM_DATA_ROOT' into $DAEMON_CONFIG_FILE. Proceeding without this custom data-root." >&2
-             # Decide how to handle: skip? error? For now, continue without data-root.
-             # Revert might be complex if defaults were already merged, proceed with caution.
+            echo "❌ Error: Failed to merge custom data-root '$CUSTOM_DATA_ROOT' into the JSON configuration." >&2
+            exit 1
         fi
     fi
 
@@ -242,8 +233,8 @@ if [ "$MANAGE_DAEMON_JSON" = true ]; then
             echo "✅ $DAEMON_CONFIG_FILE configured."
             NEEDS_RESTART=true # Mark that Docker needs restart/reload
         else
-            echo "❌ Error: Failed to write $DAEMON_CONFIG_FILE." >&2
-            # Potentially exit here if this failure is critical
+            echo "❌ Error: Failed to write final configuration to $DAEMON_CONFIG_FILE." >&2
+            exit 1
         fi
     fi
 else
